@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Симуляция Закона Ома</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Стили для ползунков */
+        input[type=range] {
+            -webkit-appearance: none;
+            width: 100%;
+            background: transparent;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 20px;
+            width: 20px;
+            border-radius: 50%;
+            background: #3b82f6;
+            cursor: pointer;
+            margin-top: -8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 4px;
+            cursor: pointer;
+            background: #cbd5e1;
+            border-radius: 2px;
+        }
+        input[type=range]:focus {
+            outline: none;
+        }
+        .canvas-container {
+            position: relative;
+            background-color: #f8fafc;
+            border-radius: 0.75rem;
+            overflow: hidden;
+            border: 1px solid #e2e8f0;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800 font-sans min-h-screen flex flex-col items-center py-8">
+
+    <div class="max-w-4xl w-full px-4">
+        <!-- Заголовок -->
+        <header class="text-center mb-8">
+            <h1 class="text-3xl font-bold text-gray-900 mb-2">Закон Ома</h1>
+            <p class="text-gray-600">Интерактивная визуализация зависимости: <span class="font-mono bg-yellow-100 px-2 py-1 rounded">I = U / R</span></p>
+        </header>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            
+            <!-- Панель управления -->
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200 lg:col-span-1 space-y-8 h-fit">
+                
+                <!-- Напряжение -->
+                <div class="control-group">
+                    <div class="flex justify-between items-center mb-2">
+                        <label for="voltage" class="font-semibold text-red-600">Напряжение (U)</label>
+                        <span class="font-mono text-lg"><span id="voltage-val">5.0</span> В</span>
+                    </div>
+                    <input type="range" id="voltage" min="0" max="20" step="0.1" value="5.0">
+                    <p class="text-xs text-gray-400 mt-1">Сила, толкающая электроны</p>
+                </div>
+
+                <!-- Сопротивление -->
+                <div class="control-group">
+                    <div class="flex justify-between items-center mb-2">
+                        <label for="resistance" class="font-semibold text-blue-600">Сопротивление (R)</label>
+                        <span class="font-mono text-lg"><span id="resistance-val">500</span> Ом</span>
+                    </div>
+                    <input type="range" id="resistance" min="100" max="1000" step="10" value="500">
+                    <p class="text-xs text-gray-400 mt-1">Препятствие движению тока</p>
+                </div>
+
+                <!-- Результат -->
+                <div class="bg-gray-100 p-4 rounded-lg text-center mt-6">
+                    <div class="text-sm text-gray-500 uppercase tracking-wide mb-1">Сила Тока (I)</div>
+                    <div class="text-3xl font-bold text-green-600 font-mono">
+                        <span id="current-val">10.0</span> мА
+                    </div>
+                </div>
+            </div>
+
+            <!-- Визуализация -->
+            <div class="lg:col-span-2 space-y-6">
+                
+                <!-- Анимация цепи -->
+                <div class="canvas-container shadow-inner">
+                    <div class="absolute top-2 left-3 text-xs font-bold text-gray-400 uppercase">Электрическая цепь</div>
+                    <canvas id="circuitCanvas" width="600" height="200" class="w-full h-auto"></canvas>
+                </div>
+
+                <!-- График -->
+                <div class="canvas-container shadow-inner bg-white">
+                    <div class="absolute top-2 left-3 text-xs font-bold text-gray-400 uppercase">График зависимости I от U</div>
+                    <canvas id="graphCanvas" width="600" height="250" class="w-full h-auto"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Пояснение -->
+        <div class="mt-8 bg-blue-50 border border-blue-100 rounded-xl p-6 text-sm text-blue-900">
+            <h3 class="font-bold mb-2 text-lg">Как это работает?</h3>
+            <ul class="list-disc pl-5 space-y-1">
+                <li><strong>Напряжение (U):</strong> Увеличьте напряжение, чтобы "сильнее толкать" электроны. Ток увеличится.</li>
+                <li><strong>Сопротивление (R):</strong> Увеличьте сопротивление, чтобы создать больше препятствий. Ток уменьшится.</li>
+                <li><strong>Скорость частиц:</strong> Синие точки — это условные электроны. Их скорость прямо пропорциональна силе тока.</li>
+                <li><strong>Размер резистора:</strong> Прямоугольник в центре цепи схематично показывает резистор.</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        // Элементы DOM
+        const voltageInput = document.getElementById('voltage');
+        const resistanceInput = document.getElementById('resistance');
+        const voltageDisplay = document.getElementById('voltage-val');
+        const resistanceDisplay = document.getElementById('resistance-val');
+        const currentDisplay = document.getElementById('current-val');
+        
+        const circuitCanvas = document.getElementById('circuitCanvas');
+        const circuitCtx = circuitCanvas.getContext('2d');
+        const graphCanvas = document.getElementById('graphCanvas');
+        const graphCtx = graphCanvas.getContext('2d');
+
+        // Состояние
+        let voltage = 5.0;
+        let resistance = 500;
+        let current = 0; // в Амперах
+
+        // Частицы (электроны)
+        const particles = [];
+        const numParticles = 30;
+        
+        // Инициализация частиц
+        for(let i=0; i<numParticles; i++) {
+            particles.push({
+                x: Math.random() * 500, // Позиция по контуру (упрощенно линейная для визуализации)
+                offset: Math.random() * 14 - 7 // Разброс по ширине провода
+            });
+        }
+
+        // Обновление значений
+        function updateValues() {
+            voltage = parseFloat(voltageInput.value);
+            resistance = parseFloat(resistanceInput.value);
+            
+            // Закон Ома: I = U / R
+            current = voltage / resistance;
+
+            // Отображение
+            voltageDisplay.textContent = voltage.toFixed(1);
+            resistanceDisplay.textContent = resistance.toFixed(0);
+            
+            // Перевод в миллиамперы для красоты отображения (1 А = 1000 мА)
+            currentDisplay.textContent = (current * 1000).toFixed(1);
+        }
+
+        // Отрисовка цепи
+        function drawCircuit() {
+            const w = circuitCanvas.width;
+            const h = circuitCanvas.height;
+            
+            circuitCtx.clearRect(0, 0, w, h);
+
+            // Параметры провода
+            const padding = 40;
+            const wireColor = '#94a3b8'; // Slate 400
+            const wireWidth = 20;
+
+            // Координаты прямоугольника цепи
+            const rectX = padding;
+            const rectY = padding;
+            const rectW = w - padding * 2;
+            const rectH = h - padding * 2;
+
+            // Рисуем провод
+            circuitCtx.beginPath();
+            circuitCtx.strokeStyle = wireColor;
+            circuitCtx.lineWidth = wireWidth;
+            circuitCtx.lineJoin = 'round';
+            circuitCtx.strokeRect(rectX, rectY, rectW, rectH);
+
+            // Рисуем источник питания (Батарейка) - Внизу
+            const batteryWidth = 60;
+            circuitCtx.clearRect((w/2) - (batteryWidth/2) - 5, rectY + rectH - (wireWidth/2) - 5, batteryWidth + 10, wireWidth + 10);
+            
+            // Длинная палка (+)
+            circuitCtx.beginPath();
+            circuitCtx.strokeStyle = '#ef4444'; // Красный
+            circuitCtx.lineWidth = 4;
+            circuitCtx.moveTo(w/2 + 10, rectY + rectH - 15);
+            circuitCtx.lineTo(w/2 + 10, rectY + rectH + 15);
+            circuitCtx.stroke();
+            
+            // Короткая палка (-)
+            circuitCtx.beginPath();
+            circuitCtx.strokeStyle = '#334155'; // Темный
+            circuitCtx.lineWidth = 4;
+            circuitCtx.moveTo(w/2 - 10, rectY + rectH - 8);
+            circuitCtx.lineTo(w/2 - 10, rectY + rectH + 8);
+            circuitCtx.stroke();
+
+            // Знаки + и -
+            circuitCtx.font = "16px Arial";
+            circuitCtx.fillStyle = "#ef4444";
+            circuitCtx.fillText("+", w/2 + 20, rectY + rectH + 5);
+            circuitCtx.fillStyle = "#334155";
+            circuitCtx.fillText("-", w/2 - 30, rectY + rectH + 5);
+
+
+            // Рисуем Резистор - Вверху
+            const resWidth = 80;
+            const resHeight = 30;
+            // Стираем провод под резистором
+            circuitCtx.clearRect((w/2) - (resWidth/2) - 2, rectY - (wireWidth/2) - 2, resWidth + 4, wireWidth + 4);
+            
+            // Корпус резистора
+            circuitCtx.fillStyle = '#dbeafe'; // Blue 100
+            circuitCtx.strokeStyle = '#2563eb'; // Blue 600
+            circuitCtx.lineWidth = 2;
+            circuitCtx.fillRect((w/2) - (resWidth/2), rectY - (resHeight/2), resWidth, resHeight);
+            circuitCtx.strokeRect((w/2) - (resWidth/2), rectY - (resHeight/2), resWidth, resHeight);
+            
+            // Текст R
+            circuitCtx.fillStyle = '#1e40af';
+            circuitCtx.font = "bold 14px Arial";
+            circuitCtx.textAlign = "center";
+            circuitCtx.textBaseline = "middle";
+            circuitCtx.fillText("R", w/2, rectY);
+
+            // Движение электронов
+            // Скорость зависит от тока. Множитель подобран эмпирически.
+            const speed = current * 2000; 
+
+            circuitCtx.fillStyle = '#facc15'; // Желтые электроны
+
+            particles.forEach(p => {
+                // Двигаем частицу по периметру
+                // Упрощенная логика: представляем периметр как линию длиной L
+                // Затем мапим обратно на координаты прямоугольника
+                
+                // Периметр
+                const perimeter = 2 * (rectW + rectH);
+                p.x += speed; 
+                if (p.x > perimeter) p.x = 0;
+
+                let px, py;
+                
+                // Логика отображения координаты на прямоугольник (по часовой стрелке, начиная сверху слева вправо)
+                // 1. Верхняя грань
+                if (p.x < rectW) {
+                    px = rectX + p.x;
+                    py = rectY + p.offset;
+                } 
+                // 2. Правая грань
+                else if (p.x < rectW + rectH) {
+                    px = rectX + rectW + p.offset;
+                    py = rectY + (p.x - rectW);
+                }
+                // 3. Нижняя грань
+                else if (p.x < rectW * 2 + rectH) {
+                    px = (rectX + rectW) - (p.x - (rectW + rectH));
+                    py = rectY + rectH + p.offset;
+                }
+                // 4. Левая грань
+                else {
+                    px = rectX + p.offset;
+                    py = (rectY + rectH) - (p.x - (rectW * 2 + rectH));
+                }
+
+                // Не рисуем частицы поверх резистора и батареи (простая маска)
+                const inResistor = (py < rectY + 20 && px > (w/2 - resWidth/2) && px < (w/2 + resWidth/2));
+                const inBattery = (py > rectY + rectH - 20 && px > (w/2 - batteryWidth/2) && px < (w/2 + batteryWidth/2));
+
+                if (!inResistor && !inBattery) {
+                    circuitCtx.beginPath();
+                    circuitCtx.arc(px, py, 3, 0, Math.PI * 2);
+                    circuitCtx.fill();
+                }
+            });
+        }
+
+        // Отрисовка графика
+        function drawGraph() {
+            const w = graphCanvas.width;
+            const h = graphCanvas.height;
+            const padding = 40;
+
+            graphCtx.clearRect(0, 0, w, h);
+
+            // Оси
+            graphCtx.beginPath();
+            graphCtx.strokeStyle = '#64748b';
+            graphCtx.lineWidth = 1;
+            
+            // Ось Y (Ток)
+            graphCtx.moveTo(padding, padding);
+            graphCtx.lineTo(padding, h - padding);
+            
+            // Ось X (Напряжение)
+            graphCtx.lineTo(w - padding, h - padding);
+            graphCtx.stroke();
+
+            // Подписи осей
+            graphCtx.fillStyle = '#475569';
+            graphCtx.font = "12px Arial";
+            graphCtx.textAlign = "center";
+            graphCtx.fillText("Напряжение (U)", w / 2, h - 10);
+            
+            graphCtx.save();
+            graphCtx.translate(15, h / 2);
+            graphCtx.rotate(-Math.PI / 2);
+            graphCtx.fillText("Ток (I)", 0, 0);
+            graphCtx.restore();
+
+            // Масштабирование
+            const maxVoltage = 20; // Максимум слайдера
+            const maxCurrentY = 0.2; // 200 mA (0.2 A) - для визуализации, это потолок графика
+            
+            // Функция перевода значений в пиксели
+            const getX = (v) => padding + (v / maxVoltage) * (w - 2 * padding);
+            const getY = (iVal) => (h - padding) - (iVal / maxCurrentY) * (h - 2 * padding);
+
+            // Рисуем линию зависимости (I = U/R)
+            // Мы строим линию от U=0 до U=20 для ТЕКУЩЕГО сопротивления
+            graphCtx.beginPath();
+            graphCtx.strokeStyle = '#3b82f6'; // Blue
+            graphCtx.lineWidth = 2;
+            
+            graphCtx.moveTo(getX(0), getY(0));
+            
+            // Вычисляем ток при макс напряжении для данного R
+            const iAtMaxV = maxVoltage / resistance;
+            graphCtx.lineTo(getX(maxVoltage), getY(iAtMaxV));
+            graphCtx.stroke();
+
+            // Рисуем текущую точку
+            const pointX = getX(voltage);
+            const pointY = getY(current);
+
+            // Если точка выходит за пределы графика (слишком большой ток), ограничиваем
+            if (current <= maxCurrentY * 1.5) {
+                graphCtx.beginPath();
+                graphCtx.fillStyle = '#dc2626'; // Red
+                graphCtx.arc(pointX, pointY, 6, 0, Math.PI * 2);
+                graphCtx.fill();
+                graphCtx.strokeStyle = 'white';
+                graphCtx.lineWidth = 2;
+                graphCtx.stroke();
+                
+                // Подпись координат
+                graphCtx.fillStyle = '#1e293b';
+                graphCtx.font = "12px monospace";
+                graphCtx.textAlign = "left";
+                // Сдвиг текста, чтобы не перекрывал точку
+                let textX = pointX + 10;
+                let textY = pointY - 10;
+                if (textY < padding) textY = pointY + 20; 
+                
+                graphCtx.fillText(`(${voltage.toFixed(1)}В, ${(current*1000).toFixed(0)}мА)`, textX, textY);
+            }
+        }
+
+        function animate() {
+            updateValues();
+            drawCircuit();
+            drawGraph();
+            requestAnimationFrame(animate);
+        }
+
+        // Слушатели событий
+        voltageInput.addEventListener('input', updateValues);
+        resistanceInput.addEventListener('input', updateValues);
+
+        // Старт
+        animate();
+
+    </script>
+</body>
+</html>
+
+
+
